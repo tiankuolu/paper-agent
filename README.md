@@ -29,8 +29,8 @@ Paper Reading Agent 是一个 AI 驱动的学术论文阅读助手。它使用 *
 
 ```
 ┌──────────────────────────────────────────┐
-│              main.py (CLI)               │  ← 用户交互层
-│        Rich 终端渲染 · 多轮对话          │
+│     app.py (Streamlit) / main.py (CLI)   │  ← 用户交互层
+│       Web 界面 · 终端 Rich 渲染          │
 └──────────────────┬───────────────────────┘
                    │ invoke
 ┌──────────────────▼───────────────────────┐
@@ -91,9 +91,17 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 
 ### 4. 运行
 
+**命令行版本：**
 ```bash
 python main.py
 ```
+
+**Streamlit Web UI（推荐）：**
+```bash
+pip install streamlit
+streamlit run app.py
+```
+浏览器自动打开 `http://localhost:8501`，即可使用图形界面。
 
 ### 5. 交互示例
 
@@ -143,9 +151,9 @@ We employ domain randomization to bridge the sim-to-real gap...
 
 ```
 paper-agent/
-├── main.py                 # CLI 入口，交互式对话循环
-├── app.py                  # Streamlit Web UI（开发中）
-├── requirements.txt        # 依赖清单
+├── app.py                   # Streamlit Web UI（主入口）
+├── main.py                  # CLI 终端入口
+├── requirements.txt         # 依赖清单
 ├── .env                    # API Key 配置（需自行创建）
 ├── papers/                 # 下载的 PDF 存放目录
 ├── chroma_db/              # ChromaDB 向量库持久化数据
@@ -227,8 +235,9 @@ pymupdf>=1.24.0          # PDF 文本提取
 arxiv>=2.1.0             # arXiv API 客户端
 python-dotenv>=1.0.0     # 环境变量管理
 rich>=13.0.0             # 终端美化
-chromadb>=0.4.0          # 向量数据库
+chromadb>=0.4.0               # 向量数据库
 sentence-transformers>=2.2.0  # Embedding 模型
+streamlit>=1.28.0             # Web UI
 ```
 
 ---
