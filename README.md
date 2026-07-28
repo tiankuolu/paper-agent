@@ -4,7 +4,7 @@
 > 支持论文搜索、下载、总结、深度分析、问答，以及本地向量库语义检索
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V3-536DFE.svg)](https://platform.deepseek.com/)
+[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V4-536DFE.svg)](https://platform.deepseek.com/)
 [![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
