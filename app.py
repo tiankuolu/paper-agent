@@ -49,22 +49,57 @@ with st.sidebar:
     # 论文库
     st.divider()
     st.subheader("📦 论文库")
-    if st.button("📊 查看统计", use_container_width=True):
-        try:
-            from src.rag import get_vector_store
-            stats = get_vector_store().get_stats()
-            st.info(stats)
-        except Exception as e:
-            st.error(str(e))
 
-    if st.button("🔍 索引已下载论文", use_container_width=True):
-        try:
-            from src.rag import get_vector_store
-            with st.spinner("正在索引论文..."):
-                result = get_vector_store().index_all_downloaded()
-            st.success(result)
-        except Exception as e:
-            st.error(str(e))
+    # 扫描已下载的论文 + 索引状态
+    from pathlib import Path
+    from src.rag import get_vector_store
+
+    PAPERS_DIR = Path(__file__).parent / "papers"
+    pdfs = sorted(PAPERS_DIR.glob("*.pdf"))
+
+    # 获取已索引的论文 ID 集合
+    store = get_vector_store()
+    indexed_ids = set()
+    try:
+        all_meta = store.collection.get(include=["metadatas"])
+        if all_meta["metadatas"]:
+            indexed_ids = {m["arxiv_id"] for m in all_meta["metadatas"] if m}
+    except Exception:
+        pass
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("已下载", len(pdfs))
+    with col2:
+        st.metric("已索引", len(indexed_ids))
+
+    if pdfs:
+        if st.button("🔍 一键索引全部", use_container_width=True):
+            with st.spinner("正在索引..."):
+                store.index_all_downloaded()
+            st.rerun()
+
+        st.caption(f"共 {len(pdfs)} 篇论文：")
+        for pdf_path in pdfs:
+            aid = pdf_path.stem
+            is_indexed = aid in indexed_ids
+            icon = "📄" if is_indexed else "📄"
+            status = "已索引" if is_indexed else "待索引"
+            if is_indexed:
+                st.caption(f"{icon} `{aid[:20]}` {status}")
+            else:
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    st.caption(f"📄 `{aid[:20]}` {status}")
+                with col_b:
+                    if st.button("索引", key=f"idx_{aid}", use_container_width=True):
+                        from src.tools import parse_paper
+                        text = parse_paper(aid)
+                        if not text.startswith("Error"):
+                            store.add_paper(aid, text, {"title": text.split(chr(10))[0][:100]})
+                            st.rerun()
+    else:
+        st.caption("暂无已下载论文")
 
     # 会话管理
     st.divider()
