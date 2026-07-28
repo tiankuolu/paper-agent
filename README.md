@@ -235,4 +235,5 @@ sentence-transformers>=2.2.0  # Embedding 模型
 
 ## 📄 License
 
-MIT © [Your Name]
+MIT © tiankuolu
+
