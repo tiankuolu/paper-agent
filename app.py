@@ -18,10 +18,24 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---- 延迟导入 agent（带错误提示） ----
+# ---- 缓存：arXiv 标题查询（只跑一次，缓存1小时） ----
+@st.cache_data(ttl=3600, show_spinner="正在获取论文标题...")
+def fetch_titles(arxiv_ids):
+    """批量从 arXiv API 获取论文标题。"""
+    import arxiv
+    result = {}
+    for aid in arxiv_ids:
+        try:
+            client = arxiv.Client()
+            paper = next(client.results(arxiv.Search(id_list=[aid])))
+            result[aid] = paper.title[:100]
+        except Exception:
+            result[aid] = aid
+    return result
+
+# ---- 延迟导入 agent ----
 @st.cache_resource
 def load_agent():
-    """加载 Agent 单例，缓存避免重复初始化。"""
     from src.agent import get_agent
     return get_agent()
 
@@ -50,14 +64,12 @@ with st.sidebar:
     st.divider()
     st.subheader("📦 论文库")
 
-    # 扫描已下载的论文 + 索引状态
     from pathlib import Path
     from src.rag import get_vector_store
 
     PAPERS_DIR = Path(__file__).parent / "papers"
     pdfs = sorted(PAPERS_DIR.glob("*.pdf"))
 
-    # 获取已索引的论文 ID 集合
     store = get_vector_store()
     indexed_ids = set()
     try:
@@ -73,23 +85,10 @@ with st.sidebar:
     with col2:
         st.metric("已索引", len(indexed_ids))
 
-    # 用 arXiv API 获取标题（缓存到 session_state）
-    import arxiv
-    if "paper_titles" not in st.session_state:
-        st.session_state.paper_titles = {}
-    titles = st.session_state.paper_titles
-
-    for pdf_path in pdfs:
-        aid = pdf_path.stem
-        if aid not in titles:
-            try:
-                client = arxiv.Client()
-                paper = next(client.results(arxiv.Search(id_list=[aid])))
-                titles[aid] = paper.title[:100]
-            except Exception:
-                titles[aid] = aid
-
     if pdfs:
+        all_ids = tuple(p.stem for p in pdfs)
+        titles = fetch_titles(all_ids)
+
         if st.button("🔍 一键索引全部", use_container_width=True):
             with st.spinner("正在索引..."):
                 store.index_all_downloaded()
@@ -100,7 +99,6 @@ with st.sidebar:
             aid = pdf_path.stem
             title = titles.get(aid, aid)
             is_indexed = aid in indexed_ids
-            status = "✅" if is_indexed else "待索引"
             if is_indexed:
                 st.caption(f"✅ {title}")
             else:
@@ -159,12 +157,10 @@ for msg in st.session_state.messages:
 
 # 处理用户输入
 if prompt := st.chat_input("输入指令，例如：搜索 transformer attention 论文"):
-    # 添加用户消息
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 调用 Agent
     with st.chat_message("assistant"):
         try:
             agent = load_agent()
@@ -175,12 +171,8 @@ if prompt := st.chat_input("输入指令，例如：搜索 transformer attention
                     {"messages": [HumanMessage(content=prompt)]},
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 )
-                # 只取最后一条 AI 消息
                 ai_messages = [m for m in result["messages"] if m.type == "ai"]
-                if ai_messages:
-                    reply = ai_messages[-1].content
-                else:
-                    reply = "（Agent 未返回文本回复）"
+                reply = ai_messages[-1].content if ai_messages else "（Agent 未返回文本回复）"
 
             st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
