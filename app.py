@@ -18,24 +18,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---- 缓存：arXiv 标题查询（只跑一次，缓存1小时） ----
-@st.cache_data(ttl=3600, show_spinner="正在获取论文标题...")
-def fetch_titles(arxiv_ids):
-    """批量从 arXiv API 获取论文标题。"""
-    import arxiv
-    result = {}
-    for aid in arxiv_ids:
-        try:
-            client = arxiv.Client()
-            paper = next(client.results(arxiv.Search(id_list=[aid])))
-            result[aid] = paper.title[:100]
-        except Exception:
-            result[aid] = aid
-    return result
-
-# ---- 延迟导入 agent ----
+# ---- 延迟导入 agent（带错误提示） ----
 @st.cache_resource
 def load_agent():
+    """加载 Agent 单例，缓存避免重复初始化。"""
     from src.agent import get_agent
     return get_agent()
 
@@ -64,12 +50,14 @@ with st.sidebar:
     st.divider()
     st.subheader("📦 论文库")
 
+    # 扫描已下载的论文 + 索引状态
     from pathlib import Path
     from src.rag import get_vector_store
 
     PAPERS_DIR = Path(__file__).parent / "papers"
     pdfs = sorted(PAPERS_DIR.glob("*.pdf"))
 
+    # 获取已索引的论文 ID 集合
     store = get_vector_store()
     indexed_ids = set()
     try:
@@ -86,9 +74,6 @@ with st.sidebar:
         st.metric("已索引", len(indexed_ids))
 
     if pdfs:
-        all_ids = tuple(p.stem for p in pdfs)
-        titles = fetch_titles(all_ids)
-
         if st.button("🔍 一键索引全部", use_container_width=True):
             with st.spinner("正在索引..."):
                 store.index_all_downloaded()
@@ -97,20 +82,21 @@ with st.sidebar:
         st.caption(f"共 {len(pdfs)} 篇论文：")
         for pdf_path in pdfs:
             aid = pdf_path.stem
-            title = titles.get(aid, aid)
             is_indexed = aid in indexed_ids
+            icon = "📄" if is_indexed else "📄"
+            status = "已索引" if is_indexed else "待索引"
             if is_indexed:
-                st.caption(f"✅ {title}")
+                st.caption(f"{icon} `{aid[:20]}` {status}")
             else:
                 col_a, col_b = st.columns([3, 1])
                 with col_a:
-                    st.caption(f"📄 {title}")
+                    st.caption(f"📄 `{aid[:20]}` {status}")
                 with col_b:
                     if st.button("索引", key=f"idx_{aid}", use_container_width=True):
                         from src.tools import parse_paper
                         text = parse_paper(aid)
                         if not text.startswith("Error"):
-                            store.add_paper(aid, text, {"title": title})
+                            store.add_paper(aid, text, {"title": text.split(chr(10))[0][:100]})
                             st.rerun()
     else:
         st.caption("暂无已下载论文")
@@ -157,10 +143,12 @@ for msg in st.session_state.messages:
 
 # 处理用户输入
 if prompt := st.chat_input("输入指令，例如：搜索 transformer attention 论文"):
+    # 添加用户消息
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # 调用 Agent
     with st.chat_message("assistant"):
         try:
             agent = load_agent()
@@ -171,8 +159,12 @@ if prompt := st.chat_input("输入指令，例如：搜索 transformer attention
                     {"messages": [HumanMessage(content=prompt)]},
                     config={"configurable": {"thread_id": st.session_state.thread_id}},
                 )
+                # 只取最后一条 AI 消息
                 ai_messages = [m for m in result["messages"] if m.type == "ai"]
-                reply = ai_messages[-1].content if ai_messages else "（Agent 未返回文本回复）"
+                if ai_messages:
+                    reply = ai_messages[-1].content
+                else:
+                    reply = "（Agent 未返回文本回复）"
 
             st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
