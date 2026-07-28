@@ -1,17 +1,20 @@
-# 📚 Paper Reading Agent
+# 📚 Local Paper Reading Agent
 
-> 基于 **LangGraph + ReAct + RAG** 的多工具论文阅读智能助手  
-> 支持论文搜索、下载、总结、深度分析、问答，以及本地向量库语义检索
-> 内置精心设计的 **Streamlit 本地研究工作台**
+> **Local-first AI 论文阅读助手**
+>
+> 基于 **LangGraph + ReAct + RAG**，在本机完成 PDF 管理、文本解析、向量索引与研究工作台交互
+>
+> 仅在需要模型推理时调用用户自行配置的 DeepSeek 兼容接口
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V4-536DFE.svg)](https://platform.deepseek.com/)
 [![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![Local First](https://img.shields.io/badge/Architecture-Local--first-168576.svg)](#-本地优先与数据边界)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## 🖥️ 界面预览
 
-[![Paper Reading Agent 深色工作台预览](assets/paper-agent-preview.png)](assets/paper-agent-preview.png)
+[![Local Paper Reading Agent 深色工作台预览](assets/paper-agent-preview.png)](assets/paper-agent-preview.png)
 
 > 深色主题桌面端预览：包含 Agent 对话入口、本地论文库状态、会话管理与快捷研究任务。
 
@@ -19,10 +22,12 @@
 
 ## 🧠 项目概述
 
-Paper Reading Agent 是一个 AI 驱动的学术论文阅读助手。它使用 **ReAct（Reasoning + Acting）范式**，让 LLM 自主决定何时搜索、下载、阅读或分析论文。内置 **RAG 本地向量库**，支持对已下载的论文进行语义检索，实现跨论文的知识问答。
+Local Paper Reading Agent 是一个**本地优先（Local-first）**的 AI 学术论文阅读助手。它使用 **ReAct（Reasoning + Acting）范式**，让 LLM 自主决定何时搜索、下载、阅读或分析论文，同时把论文文件、解析流程、Embedding 计算、ChromaDB 向量索引和交互界面保留在用户自己的电脑上。
 
 **核心能力：**
 
+- 🏠 **本地优先架构** — PDF、向量库和运行数据存放在项目本地目录
+- 🔐 **透明的数据边界** — 只有模型任务所需的提示与论文文本会发送到用户配置的 LLM 接口
 - 🔍 **arXiv 论文搜索** — 按关键词检索，返回格式化结果
 - 📥 **论文下载** — 一键下载 PDF 到本地
 - 📝 **论文总结** — 调用 DeepSeek 生成结构化中文摘要
@@ -31,10 +36,28 @@ Paper Reading Agent 是一个 AI 驱动的学术论文阅读助手。它使用 *
 - 🧠 **RAG 语义检索** — 本地论文向量化，用自然语言搜相关段落
 - 🖥️ **本地研究工作台** — 响应式对话界面、论文库状态、快捷任务与会话管理
 
+### 🏠 本地优先与数据边界
+
+项目默认以本地 Python 进程和本地浏览器页面运行，不依赖托管数据库或远程
+Web 服务保存论文库。
+
+| 数据 / 能力 | 位置 | 是否离开本机 |
+|---|---|---|
+| 下载的论文 PDF | `papers/` | 否 |
+| PDF 文本解析 | PyMuPDF 本地进程 | 否 |
+| Embedding 计算 | `sentence-transformers` 本地模型 | 否 |
+| ChromaDB 向量索引 | `chroma_db/` | 否 |
+| Streamlit 工作台与会话状态 | 本地浏览器 + 本地 Python 进程 | 否 |
+| arXiv 搜索与 PDF 下载 | arXiv 网络接口 | 是，仅用于搜索和下载 |
+| 总结、精读与 Agent 推理 | 用户配置的 DeepSeek 兼容接口 | 是，仅发送完成任务所需的内容 |
+
+API Key 保存在本地 `.env` 或 Streamlit Secrets 中，相关文件已通过
+`.gitignore` 排除，不会随仓库提交。
+
 ### Streamlit 工作台
 
-Web UI 以研究任务为中心，首屏不会加载 Embedding 模型；只有在执行 Agent
-任务或点击索引时，才会按需初始化相关资源。
+Web UI 由本机 Streamlit 进程提供，以研究任务为中心。首屏不会加载
+Embedding 模型；只有在执行 Agent 任务或点击索引时，才会按需初始化相关资源。
 
 - **清晰的研究入口**：论文发现、经典精读、本地知识检索三个快捷任务
 - **对话式工作流**：在一个会话中连续完成搜索、下载、总结、追问与对比
@@ -139,7 +162,7 @@ streamlit run app.py
 ### 5. 交互示例
 
 ```
-📚 Paper Reading Agent
+📚 Local Paper Reading Agent
 An AI-powered academic paper assistant
 
 You > find papers about reinforcement learning for robotics
