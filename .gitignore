@@ -1,0 +1,35 @@
+# API Key — 绝对不能上传
+.env
+
+# 下载的论文 PDF — 太大，每人自己下载
+papers/*.pdf
+
+# 向量数据库 — 本地数据，每人自己索引
+chroma_db/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+skills/
+
+# 开发过程记录（非项目文件）
+hello-*.md

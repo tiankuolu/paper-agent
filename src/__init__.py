@@ -1,0 +1,1 @@
+"""Paper Reading Agent - An AI-powered paper reading assistant."""
