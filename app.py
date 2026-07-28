@@ -73,7 +73,8 @@ with st.sidebar:
     with col2:
         st.metric("已索引", len(indexed_ids))
 
-    # 读每篇论文标题（缓存到 session_state 避免重复解析）
+    # 用 arXiv API 获取标题（缓存到 session_state）
+    import arxiv
     if "paper_titles" not in st.session_state:
         st.session_state.paper_titles = {}
     titles = st.session_state.paper_titles
@@ -82,11 +83,9 @@ with st.sidebar:
         aid = pdf_path.stem
         if aid not in titles:
             try:
-                import fitz
-                doc = fitz.open(str(pdf_path))
-                text = doc[0].get_text() if doc.page_count > 0 else ""
-                doc.close()
-                titles[aid] = text.split("\n")[0][:80] if text.strip() else aid
+                client = arxiv.Client()
+                paper = next(client.results(arxiv.Search(id_list=[aid])))
+                titles[aid] = paper.title[:100]
             except Exception:
                 titles[aid] = aid
 
