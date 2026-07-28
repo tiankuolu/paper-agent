@@ -1,5 +1,6 @@
 # API Key — 绝对不能上传
 .env
+.streamlit/secrets.toml
 
 # 下载的论文 PDF — 太大，每人自己下载
 papers/*.pdf

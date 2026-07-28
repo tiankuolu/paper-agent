@@ -2,6 +2,7 @@
 
 > 基于 **LangGraph + ReAct + RAG** 的多工具论文阅读智能助手  
 > 支持论文搜索、下载、总结、深度分析、问答，以及本地向量库语义检索
+> 内置精心设计的 **Streamlit 本地研究工作台**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V4-536DFE.svg)](https://platform.deepseek.com/)
@@ -22,6 +23,20 @@ Paper Reading Agent 是一个 AI 驱动的学术论文阅读助手。它使用 *
 - 🔬 **深度分析** — 7 维度结构化精读（方法、实验、贡献、局限等）
 - 💬 **论文问答** — 基于论文原文的精准问答
 - 🧠 **RAG 语义检索** — 本地论文向量化，用自然语言搜相关段落
+- 🖥️ **本地研究工作台** — 响应式对话界面、论文库状态、快捷任务与会话管理
+
+### Streamlit 工作台
+
+Web UI 以研究任务为中心，首屏不会加载 Embedding 模型；只有在执行 Agent
+任务或点击索引时，才会按需初始化相关资源。
+
+- **清晰的研究入口**：论文发现、经典精读、本地知识检索三个快捷任务
+- **对话式工作流**：在一个会话中连续完成搜索、下载、总结、追问与对比
+- **本地论文库**：查看已下载 PDF，并一键建立 ChromaDB 向量索引
+- **论文标题识别**：侧边栏从 PDF 首页提取标题，并区分已索引与待索引状态
+- **浅色 / 深色主题**：在右上角设置菜单中切换，两套配色均针对阅读场景设计
+- **安全的配置状态**：只显示 API 是否就绪，不在界面暴露 Key 内容
+- **独立会话记忆**：新建会话会创建新的 LangGraph Thread
 
 ---
 
@@ -98,10 +113,22 @@ python main.py
 
 **Streamlit Web UI（推荐）：**
 ```bash
-pip install streamlit
 streamlit run app.py
 ```
-浏览器自动打开 `http://localhost:8501`，即可使用图形界面。
+
+浏览器会自动打开 [http://localhost:8501](http://localhost:8501)。如果没有自动
+打开，请手动访问该地址。
+
+进入工作台后：
+
+1. 确认侧边栏的 DeepSeek API 状态为“已连接”。
+2. 选择一个快捷研究任务，或直接在底部输入问题。
+3. 下载论文后，可在侧边栏查看本地 PDF，并点击“索引全部论文”。
+4. 使用“新建会话”开始独立研究主题；“清空对话”只清理当前界面。
+5. 在右上角 `··· → Settings → Theme` 中选择浅色、深色或跟随系统。
+
+> 首次建立 RAG 索引时会加载 `all-MiniLM-L6-v2` Embedding 模型，
+> 所需时间取决于本机环境；后续会复用本地缓存。
 
 ### 5. 交互示例
 
@@ -151,7 +178,7 @@ We employ domain randomization to bridge the sim-to-real gap...
 
 ```
 paper-agent/
-├── app.py                   # Streamlit Web UI（主入口）
+├── app.py                   # Streamlit 本地研究工作台（主入口）
 ├── main.py                  # CLI 终端入口
 ├── requirements.txt         # 依赖清单
 ├── .env                    # API Key 配置（需自行创建）
@@ -237,7 +264,7 @@ python-dotenv>=1.0.0     # 环境变量管理
 rich>=13.0.0             # 终端美化
 chromadb>=0.4.0               # 向量数据库
 sentence-transformers>=2.2.0  # Embedding 模型
-streamlit>=1.28.0             # Web UI
+streamlit>=1.60.0             # Web UI（原生浅色 / 深色双主题）
 ```
 
 ---
@@ -245,4 +272,3 @@ streamlit>=1.28.0             # Web UI
 ## 📄 License
 
 MIT © tiankuolu
-
