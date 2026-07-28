@@ -9,6 +9,12 @@
 [![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+## 🖥️ 界面预览
+
+[![Paper Reading Agent 深色工作台预览](assets/paper-agent-preview.png)](assets/paper-agent-preview.png)
+
+> 深色主题桌面端预览：包含 Agent 对话入口、本地论文库状态、会话管理与快捷研究任务。
+
 ---
 
 ## 🧠 项目概述
