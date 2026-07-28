@@ -2,19 +2,18 @@
 每个工具函数都是 agent 可以调用的"技能"：
   - 搜索/下载论文（arXiv API）
   - 解析 PDF（PyMuPDF）
-  - AI 总结/精读/问答（DeepSeek LLM）
+  - AI 总结/精读/问答（当前配置的 LLM）
   - 本地向量库索引/语义搜索（ChromaDB + sentence-transformers）
 
 工具函数的返回值是字符串，会直接喂回给 LLM 作为 tool result。"""
 
-import os  # 读取环境变量
 from dotenv import load_dotenv  # 从 .env 文件加载配置
 load_dotenv()  # 把 .env 中的 KEY=VALUE 注入 os.environ
 import arxiv  # arXiv 官方 Python 客户端，用于搜索和获取论文元数据
 import fitz  # PyMuPDF 库，用于解析 PDF 提取纯文本
 import urllib.request  # 标准库 HTTP 下载，用于下载 PDF 文件
 from pathlib import Path  # 面向对象的文件路径操作
-from openai import OpenAI  # OpenAI 兼容客户端，同时用于 DeepSeek 和千问 VL
+from .llm import LLMConfig, create_openai_client, get_default_llm_config
 from .prompts import SUMMARIZE_PROMPT, DEEP_READ_PROMPT, CHAT_PROMPT  # 导入提示词模板
 
 # ============================================================
@@ -22,12 +21,6 @@ from .prompts import SUMMARIZE_PROMPT, DEEP_READ_PROMPT, CHAT_PROMPT  # 导入�
 # ============================================================
 PAPERS_DIR = Path(__file__).parent.parent / "papers"  # PDF 存储目录：项目根目录/papers
 PAPERS_DIR.mkdir(exist_ok=True)  # 如果目录不存在就创建，已存在则跳过
-
-# DeepSeek 客户端：用于文本总结、深度阅读、论文问答
-client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"),  # 从环境变量读取 API Key
-    base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")  # DeepSeek API 地址（OpenAI 兼容）
-)
 
 # ============================================================
 # 工具 1：搜索论文
@@ -102,8 +95,10 @@ def _get_text(aid): return parse_paper(aid)  # 简写，内部调用用
 # 工具 3：总结论文
 # 支持逗号分隔的多个 arXiv ID，逐个解析 PDF → 调用 DeepSeek 生成中文总结
 # ============================================================
-def summarize_papers(arxiv_ids: str) -> str:
+def summarize_papers(arxiv_ids: str, llm_config: LLMConfig | None = None) -> str:
     """Summarize one or more papers (comma-separated arXiv IDs) in Chinese."""
+    config = (llm_config or get_default_llm_config()).require_valid()
+    client = create_openai_client(config)
     output = ""  # 累积所有论文的总结
     for aid in arxiv_ids.split(","):  # 按逗号拆分多个 ID
         aid = aid.strip().split("v")[0]  # 清理每个 ID
@@ -111,10 +106,10 @@ def summarize_papers(arxiv_ids: str) -> str:
         if text.startswith("Error"):  # PDF 解析失败
             output += f"### {aid}\n{text}\n---\n"
             continue
-        r = client.chat.completions.create(  # 调用 DeepSeek 做总结
-            model="deepseek-v4-pro",  # 使用的模型
+        r = client.chat.completions.create(  # 调用当前模型做总结
+            model=config.model,
             messages=[{"role": "user", "content": SUMMARIZE_PROMPT.format(paper_text=text[:8000])}],  # 前 8000 字 + 总结模板
-            temperature=0.3,  # 低温度，输出更确定、更一致
+            temperature=config.temperature,
             max_tokens=1500  # 限制输出长度
         )
         output += f"### {aid}\n{r.choices[0].message.content}\n---\n"  # 拼接结果
@@ -124,15 +119,17 @@ def summarize_papers(arxiv_ids: str) -> str:
 # 工具 4：深度阅读
 # 对单篇论文做 7 维度结构化深度分析
 # ============================================================
-def deep_read(arxiv_id: str) -> str:
+def deep_read(arxiv_id: str, llm_config: LLMConfig | None = None) -> str:
     """Deep structured analysis (7 dimensions) of a single paper."""
+    config = (llm_config or get_default_llm_config()).require_valid()
+    client = create_openai_client(config)
     aid = arxiv_id.strip().split("v")[0]  # 清理 ID
     text = _get_text(aid)  # 解析 PDF
     if text.startswith("Error"): return text  # 解析失败直接返回错误
-    r = client.chat.completions.create(  # 调用 DeepSeek 做深度分析
-        model="deepseek-v4-pro",
+    r = client.chat.completions.create(  # 调用当前模型做深度分析
+        model=config.model,
         messages=[{"role": "user", "content": DEEP_READ_PROMPT.format(paper_text=text[:15000])}],  # 前 15000 字 + 深度分析模板
-        temperature=0.3,
+        temperature=config.temperature,
         max_tokens=3000  # 深度分析需要更多 token
     )
     return f"## Deep Read: {aid}\n\n{r.choices[0].message.content}"
@@ -141,18 +138,24 @@ def deep_read(arxiv_id: str) -> str:
 # 工具 5：论文问答
 # 基于论文全文回答用户的具体问题，要求模型只基于原文、不编造
 # ============================================================
-def chat_with_paper(arxiv_id: str, question: str) -> str:
+def chat_with_paper(
+    arxiv_id: str,
+    question: str,
+    llm_config: LLMConfig | None = None,
+) -> str:
     """Answer a question based solely on the paper content."""
+    config = (llm_config or get_default_llm_config()).require_valid()
+    client = create_openai_client(config)
     aid = arxiv_id.strip().split("v")[0]  # 清理 ID
     text = _get_text(aid)  # 解析 PDF
     if text.startswith("Error"): return text  # 解析失败直接返回
-    r = client.chat.completions.create(  # 调用 DeepSeek 做问答
-        model="deepseek-v4-pro",
+    r = client.chat.completions.create(  # 调用当前模型做问答
+        model=config.model,
         messages=[{"role": "user", "content": CHAT_PROMPT.format(
             paper_text=text[:15000],  # 论文全文（截断）
             question=question  # 用户问题
         )}],
-        temperature=0.3,
+        temperature=config.temperature,
         max_tokens=1500
     )
     return f"Q: {question}\n\n{r.choices[0].message.content}"

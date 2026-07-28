@@ -6,6 +6,8 @@ Run with:
 
 from __future__ import annotations
 
+import hashlib
+import html
 import os
 import re
 import traceback
@@ -14,6 +16,8 @@ from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
+
+from src.llm import LLMConfig, get_default_llm_config, get_provider_presets
 
 
 load_dotenv()
@@ -493,6 +497,25 @@ def init_session_state() -> None:
     """Initialize all per-browser-tab state in one place."""
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("thread_id", str(uuid.uuid4()))
+    if "active_llm_config" not in st.session_state:
+        default_config = get_default_llm_config()
+        preset = get_provider_presets()[default_config.provider]
+        default_key = default_config.api_key or read_config_value("LLM_API_KEY")
+        default_key = default_key or read_config_value(preset.api_key_env)
+        st.session_state.active_llm_config = LLMConfig(
+            provider=default_config.provider,
+            model=default_config.model,
+            base_url=default_config.base_url,
+            api_key=default_key,
+            temperature=default_config.temperature,
+        )
+
+    active_config = st.session_state.active_llm_config
+    st.session_state.setdefault("draft_llm_provider", active_config.provider)
+    st.session_state.setdefault("draft_llm_model", active_config.model)
+    st.session_state.setdefault("draft_llm_base_url", active_config.base_url)
+    st.session_state.setdefault("draft_llm_api_key", "")
+    st.session_state.setdefault("draft_llm_temperature", active_config.temperature)
 
 
 def new_session() -> None:
@@ -506,28 +529,66 @@ def clear_chat() -> None:
     st.session_state.messages = []
 
 
-def get_api_key() -> str:
-    """Read the DeepSeek key without ever rendering its value."""
-    key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    if key:
-        return key
-
+def read_config_value(name: str) -> str:
+    """Read one local env/secret value without rendering it."""
+    value = os.getenv(name, "").strip()
+    if value:
+        return value
     try:
-        key = str(st.secrets.get("DEEPSEEK_API_KEY", "")).strip()
+        return str(st.secrets.get(name, "")).strip()
     except Exception:
-        key = ""
+        return ""
 
-    if key:
-        os.environ["DEEPSEEK_API_KEY"] = key
-    return key
+
+def sync_provider_defaults() -> None:
+    """Refresh draft endpoint/model fields after selecting another provider."""
+    preset = get_provider_presets()[st.session_state.draft_llm_provider]
+    st.session_state.draft_llm_model = preset.default_model
+    st.session_state.draft_llm_base_url = preset.base_url
+    st.session_state.draft_llm_api_key = ""
+
+
+def build_draft_llm_config() -> LLMConfig:
+    """Resolve the sidebar draft, reusing a local key when appropriate."""
+    provider = st.session_state.draft_llm_provider
+    preset = get_provider_presets()[provider]
+    active_config: LLMConfig = st.session_state.active_llm_config
+    draft_key = st.session_state.draft_llm_api_key.strip()
+    if not draft_key and active_config.provider == provider:
+        draft_key = active_config.api_key
+    draft_key = draft_key or read_config_value("LLM_API_KEY")
+    draft_key = draft_key or read_config_value(preset.api_key_env)
+    return LLMConfig(
+        provider=provider,
+        model=st.session_state.draft_llm_model.strip(),
+        base_url=st.session_state.draft_llm_base_url.strip(),
+        api_key=draft_key,
+        temperature=float(st.session_state.draft_llm_temperature),
+    )
 
 
 @st.cache_resource(show_spinner=False)
-def load_agent():
+def load_agent(
+    provider: str,
+    model: str,
+    base_url: str,
+    temperature: float,
+    api_key_fingerprint: str,
+    _api_key: str,
+):
     """Load the compiled LangGraph agent only after the first question."""
+    del api_key_fingerprint  # Hash changes the cache key without exposing the secret.
     from src.agent import get_agent
 
-    return get_agent()
+    return get_agent(
+        LLMConfig(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            api_key=_api_key,
+            temperature=temperature,
+        )
+    )
 
 
 @st.cache_resource(show_spinner=False)
@@ -716,7 +777,17 @@ def invoke_agent(prompt: str) -> str:
     """Run one user turn and return the latest AI message."""
     from langchain_core.messages import HumanMessage
 
-    result = load_agent().invoke(
+    active_config: LLMConfig = st.session_state.active_llm_config
+    key_fingerprint = hashlib.sha256(active_config.api_key.encode("utf-8")).hexdigest()
+    agent = load_agent(
+        active_config.provider,
+        active_config.model,
+        active_config.base_url,
+        active_config.temperature,
+        key_fingerprint,
+        active_config.api_key,
+    )
+    result = agent.invoke(
         {"messages": [HumanMessage(content=prompt)]},
         config={"configurable": {"thread_id": st.session_state.thread_id}},
     )
@@ -727,7 +798,9 @@ def invoke_agent(prompt: str) -> str:
 
 
 init_session_state()
-api_ready = bool(get_api_key())
+provider_presets = get_provider_presets()
+active_llm_config: LLMConfig = st.session_state.active_llm_config
+llm_ready = active_llm_config.is_ready
 downloaded_papers = scan_downloaded_papers(str(PAPERS_DIR))
 indexed_ids = set(scan_indexed_paper_ids(str(APP_ROOT / "chroma_db")))
 current_theme = "深色" if active_theme_type == "dark" else "浅色"
@@ -750,30 +823,78 @@ with st.sidebar:
     index_notice = st.session_state.pop("index_notice", None)
     if index_notice:
         st.toast(index_notice)
+    model_notice = st.session_state.pop("model_notice", None)
+    if model_notice:
+        st.toast(model_notice)
 
     st.markdown('<div class="sidebar-section-label">外观</div>', unsafe_allow_html=True)
     st.caption(f"当前为{current_theme}模式 · 可在右上角 ··· → Settings → Theme 切换")
 
-    connection_state = "已连接" if api_ready else "等待配置"
-    dot_class = "status-dot ready" if api_ready else "status-dot"
+    connection_state = "已就绪" if llm_ready else "等待配置"
+    dot_class = "status-dot ready" if llm_ready else "status-dot"
     st.markdown(
         f"""
         <div class="status-row">
-            <span class="status-label">DeepSeek API</span>
+            <span class="status-label">{html.escape(active_llm_config.provider_label)}</span>
             <span class="status-pill"><span class="{dot_class}"></span>{connection_state}</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    st.caption(f"当前模型 · {active_llm_config.model or '尚未选择'}")
 
-    if not api_ready:
-        with st.expander("配置 API Key"):
-            st.caption("在项目根目录创建 `.env` 文件，然后刷新页面。")
-            st.code(
-                "DEEPSEEK_API_KEY=sk-your-key\n"
-                "DEEPSEEK_BASE_URL=https://api.deepseek.com",
-                language="bash",
-            )
+    with st.expander("更换 LLM", expanded=not llm_ready):
+        st.selectbox(
+            "供应商",
+            options=list(provider_presets),
+            format_func=lambda provider_id: provider_presets[provider_id].label,
+            key="draft_llm_provider",
+            on_change=sync_provider_defaults,
+        )
+        selected_preset = provider_presets[st.session_state.draft_llm_provider]
+        st.caption(selected_preset.description)
+        st.text_input(
+            "模型名称",
+            key="draft_llm_model",
+            placeholder="例如 gpt-4.1-mini",
+        )
+        st.text_input(
+            "API Base URL",
+            key="draft_llm_base_url",
+            placeholder="https://…/v1",
+        )
+        st.text_input(
+            "API Key",
+            key="draft_llm_api_key",
+            type="password",
+            placeholder="留空则使用本地环境变量",
+        )
+        if selected_preset.requires_api_key:
+            st.caption(f"环境变量：`{selected_preset.api_key_env}` 或 `LLM_API_KEY`")
+        else:
+            st.caption("本地或免鉴权接口可以留空 API Key。")
+        st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=2.0,
+            step=0.1,
+            key="draft_llm_temperature",
+        )
+        if st.button("应用模型设置", key="apply_llm", use_container_width=True):
+            candidate = build_draft_llm_config()
+            errors = candidate.validation_errors()
+            if errors:
+                for error in errors:
+                    st.error(error)
+            else:
+                st.session_state.active_llm_config = candidate
+                st.session_state.messages = []
+                st.session_state.thread_id = str(uuid.uuid4())
+                load_agent.clear()
+                st.session_state.model_notice = (
+                    f"已切换到 {candidate.provider_label} · {candidate.model}"
+                )
+                st.rerun()
 
     st.markdown('<div class="sidebar-section-label">本地论文库</div>', unsafe_allow_html=True)
     metric_left, metric_right = st.columns(2)
@@ -822,7 +943,7 @@ with st.sidebar:
     session_right.button("清空对话", key="clear_chat", on_click=clear_chat)
 
     st.markdown('<div class="sidebar-section-label">隐私</div>', unsafe_allow_html=True)
-    st.caption("PDF、向量索引与会话界面均保留在本机；模型请求发送至你配置的 DeepSeek 接口。")
+    st.caption("PDF、向量索引与会话界面均保留在本机；模型请求只发送至当前配置的接口。")
 
 
 st.markdown(
@@ -839,6 +960,7 @@ st.markdown(
             <span class="hero-chip">PDF 精读</span>
             <span class="hero-chip">多轮问答</span>
             <span class="hero-chip">本地 RAG</span>
+            <span class="hero-chip">多模型切换</span>
         </div>
     </section>
     """,
@@ -907,10 +1029,12 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        if not api_ready:
+        if not llm_ready:
+            preset = active_llm_config.preset
             reply = (
-                "还没有检测到 DeepSeek API Key。请在项目根目录的 `.env` 文件中配置 "
-                "`DEEPSEEK_API_KEY`，保存后刷新页面即可开始。"
+                f"当前 {active_llm_config.provider_label} 配置尚未就绪。"
+                f"请在左侧“更换 LLM”中填写模型与接口"
+                + (f"，并配置 `{preset.api_key_env}` 或输入 API Key。" if preset.requires_api_key else "。")
             )
             st.warning(reply)
         else:
@@ -935,7 +1059,7 @@ st.markdown(
     <div class="paper-footer">
         <span><strong>{len(st.session_state.messages)}</strong> 条消息</span>
         <span>Thread <strong>{st.session_state.thread_id[:12]}</strong></span>
-        <span>LangGraph · ReAct · ChromaDB</span>
+        <span>{html.escape(active_llm_config.provider_label)} · {html.escape(active_llm_config.model)}</span>
     </div>
     """,
     unsafe_allow_html=True,

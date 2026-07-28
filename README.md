@@ -4,10 +4,10 @@
 >
 > 基于 **LangGraph + ReAct + RAG**，在本机完成 PDF 管理、文本解析、向量索引与研究工作台交互
 >
-> 仅在需要模型推理时调用用户自行配置的 DeepSeek 兼容接口
+> 可自主切换 **DeepSeek、OpenAI、Qwen、Ollama** 或任意 OpenAI-compatible 接口
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20V4-536DFE.svg)](https://platform.deepseek.com/)
+[![Multi-provider LLM](https://img.shields.io/badge/LLM-Multi--provider-536DFE.svg)](#-模型供应商与配置)
 [![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![Local First](https://img.shields.io/badge/Architecture-Local--first-168576.svg)](#-本地优先与数据边界)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -16,7 +16,7 @@
 
 [![Local Paper Reading Agent 深色工作台预览](assets/paper-agent-preview.png)](assets/paper-agent-preview.png)
 
-> 深色主题桌面端预览：包含 Agent 对话入口、本地论文库状态、会话管理与快捷研究任务。
+> 深色主题桌面端预览：模型切换面板、Agent 对话入口与本地优先研究工作台。
 
 ---
 
@@ -28,9 +28,10 @@ Local Paper Reading Agent 是一个**本地优先（Local-first）**的 AI 学�
 
 - 🏠 **本地优先架构** — PDF、向量库和运行数据存放在项目本地目录
 - 🔐 **透明的数据边界** — 只有模型任务所需的提示与论文文本会发送到用户配置的 LLM 接口
+- 🔁 **多模型自由切换** — 在侧边栏切换 DeepSeek、OpenAI、Qwen、Ollama 或自定义接口
 - 🔍 **arXiv 论文搜索** — 按关键词检索，返回格式化结果
 - 📥 **论文下载** — 一键下载 PDF 到本地
-- 📝 **论文总结** — 调用 DeepSeek 生成结构化中文摘要
+- 📝 **论文总结** — 调用当前选择的 LLM 生成结构化中文摘要
 - 🔬 **深度分析** — 7 维度结构化精读（方法、实验、贡献、局限等）
 - 💬 **论文问答** — 基于论文原文的精准问答
 - 🧠 **RAG 语义检索** — 本地论文向量化，用自然语言搜相关段落
@@ -49,10 +50,10 @@ Web 服务保存论文库。
 | ChromaDB 向量索引 | `chroma_db/` | 否 |
 | Streamlit 工作台与会话状态 | 本地浏览器 + 本地 Python 进程 | 否 |
 | arXiv 搜索与 PDF 下载 | arXiv 网络接口 | 是，仅用于搜索和下载 |
-| 总结、精读与 Agent 推理 | 用户配置的 DeepSeek 兼容接口 | 是，仅发送完成任务所需的内容 |
+| 总结、精读与 Agent 推理 | 用户当前配置的 LLM 接口 | 远程模型会；使用本机 Ollama 时可不离开本机 |
 
-API Key 保存在本地 `.env` 或 Streamlit Secrets 中，相关文件已通过
-`.gitignore` 排除，不会随仓库提交。
+API Key 可以放在本地 `.env` / Streamlit Secrets 中，或仅输入当前浏览器会话；
+相关配置文件已通过 `.gitignore` 排除，不会随仓库提交。
 
 ### Streamlit 工作台
 
@@ -64,7 +65,8 @@ Embedding 模型；只有在执行 Agent 任务或点击索引时，才会按需
 - **本地论文库**：查看已下载 PDF，并一键建立 ChromaDB 向量索引
 - **论文标题识别**：侧边栏从 PDF 首页提取标题，并区分已索引与待索引状态
 - **浅色 / 深色主题**：在右上角设置菜单中切换，两套配色均针对阅读场景设计
-- **安全的配置状态**：只显示 API 是否就绪，不在界面暴露 Key 内容
+- **模型设置面板**：无需修改代码即可切换供应商、模型名、Base URL 与 Temperature
+- **安全的配置状态**：API Key 使用密码输入框，不在界面回显 Key 内容
 - **独立会话记忆**：新建会话会创建新的 LangGraph Thread
 
 ---
@@ -83,16 +85,15 @@ Embedding 模型；只有在执行 Agent 任务或点击索引时，才会按需
 │   MemorySaver: 多轮记忆 · 条件路由        │
 └────┬──────────────┬──────────────────────┘
      │              │
-┌────▼────┐   ┌─────▼──────────────────────┐
-│ prompts │   │       tools.py (8 Tools)    │  ← 能力层
-│  4 模板  │   │  搜索·下载·总结·精读·问答   │
-└─────────┘   │  索引·语义搜索·统计         │
-              └──┬───┬──────┬───────────────┘
-                 │   │      │
+┌────▼──────────────┐   ┌─────▼─────────────┐
+│ llm.py + prompts  │   │ tools.py (8 Tools) │  ← 配置与能力层
+│ 供应商配置 · 4 模板 │   │ 搜索·总结·RAG 等   │
+└───────────────────┘   └──┬───┬──────┬─────┘
+                            │   │      │
         ┌────────▼───▼──┐   ┌▼──────────────┐
         │  arXiv + PDF  │   │    RAG 模块    │
         │  API · PyMuPDF│   │ ChromaDB +     │
-        │  DeepSeek API │   │ sentence-      │
+        │  当前 LLM API │   │ sentence-      │
         └───────────────┘   │ transformers   │
                             └────────────────┘
 ```
@@ -114,7 +115,7 @@ START → agent_node ⇄ tools_node
 ### 1. 环境要求
 
 - Python 3.11+
-- DeepSeek API Key（[申请地址](https://platform.deepseek.com/)）
+- 至少一个可用的 OpenAI-compatible 模型接口；使用 Ollama 时无需云端 API Key
 
 ### 2. 安装
 
@@ -124,14 +125,49 @@ cd paper-agent
 pip install -r requirements.txt
 ```
 
-### 3. 配置 API Key
+### 3. 配置模型
 
-在项目根目录创建 `.env` 文件：
+最简单的方式是运行 Web UI 后，在侧边栏展开“更换 LLM”并直接选择供应商。
+也可以在项目根目录创建 `.env`，为 Web UI 和 CLI 设置默认模型：
+
+```bash
+# 通用配置会覆盖供应商预设
+LLM_PROVIDER=deepseek
+LLM_MODEL=deepseek-v4-pro
+LLM_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=sk-your-api-key
+LLM_TEMPERATURE=0.3
+```
+
+原有 DeepSeek 环境变量仍然兼容：
 
 ```bash
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
+
+### 🔁 模型供应商与配置
+
+| 预设 | 默认地址 | 默认模型 | Key 环境变量 |
+|---|---|---|---|
+| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-pro` | `DEEPSEEK_API_KEY` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4.1-mini` | `OPENAI_API_KEY` |
+| Qwen / 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | `DASHSCOPE_API_KEY` |
+| Ollama（本地） | `http://localhost:11434/v1` | `qwen2.5:7b` | 不需要 |
+| 自定义接口 | 可编辑 | 可编辑 | 可选或 `LLM_API_KEY` |
+
+供应商只是可编辑的快捷预设：模型名称和 Base URL 均可自由修改。切换并应用后，
+Agent 推理、论文总结、深度精读和论文问答会统一使用新模型，同时自动开启新会话，
+避免不同模型共享旧的对话记忆。
+
+使用 Ollama 的示例：
+
+```bash
+ollama pull qwen2.5:7b
+ollama serve
+```
+
+然后在侧边栏选择“Ollama（本地）”并应用即可。
 
 ### 4. 运行
 
@@ -150,7 +186,7 @@ streamlit run app.py
 
 进入工作台后：
 
-1. 确认侧边栏的 DeepSeek API 状态为“已连接”。
+1. 在侧边栏选择 LLM，并确认状态为“已就绪”。
 2. 选择一个快捷研究任务，或直接在底部输入问题。
 3. 下载论文后，可在侧边栏查看本地 PDF，并点击“索引全部论文”。
 4. 使用“新建会话”开始独立研究主题；“清空对话”只清理当前界面。
@@ -216,6 +252,7 @@ paper-agent/
 │
 └── src/
     ├── __init__.py         # 包声明
+    ├── llm.py              # 多供应商配置与 OpenAI-compatible 适配层
     ├── prompts.py          # Prompt 模板（系统提示、总结、精读、问答）
     ├── tools.py            # 8 个工具函数 + 注册表
     ├── agent.py            # LangGraph Agent 编排（ReAct 循环 + 图构建）
@@ -229,7 +266,7 @@ paper-agent/
 | 组件 | 技术 | 说明 |
 |------|------|------|
 | **Agent 框架** | LangGraph | StateGraph 构建 agent ⇄ tools 循环 |
-| **LLM** | DeepSeek V4 (`deepseek-v4-pro`) | OpenAI 兼容接口，支持 Tool Calling |
+| **LLM** | DeepSeek / OpenAI / Qwen / Ollama / Custom | 统一 OpenAI-compatible 接口，需支持 Tool Calling |
 | **论文搜索** | `arxiv` (2.x) | arXiv API 官方客户端 |
 | **PDF 解析** | PyMuPDF (`fitz`) | 提取论文纯文本 |
 | **向量数据库** | ChromaDB | 持久化存储，余弦相似度检索 |
@@ -264,7 +301,7 @@ paper-agent/
 - **Prompt Engineering** — 角色设定、结构化输出、链式提示
 - **RAG（检索增强生成）** — 文本分块 → Embedding 向量化 → 语义检索 → 增强回答
 - **状态管理** — AgentState 消息历史 + `add_messages` 追加策略
-- **单例模式** — 全局复用 Agent 实例和向量库实例，避免重复初始化
+- **配置隔离** — 每个活动模型配置绑定独立 Agent 与会话记忆
 
 ---
 
@@ -275,7 +312,7 @@ paper-agent/
 - [ ] **引用关系图谱** — NetworkX + PyVis 可视化论文引用网络
 - [ ] **论文对比分析** — 同时分析多篇论文的异同
 - [ ] **持久化 Memory** — SQLite 替代 MemorySaver，支持重启后恢复对话
-- [ ] **多模型适配** — 统一接口支持 Claude / GPT / 本地模型
+- [ ] **原生非 OpenAI 协议适配** — 扩展 Claude 等供应商的原生 SDK
 - [ ] **自动推送** — 每日新论文摘要 + 邮件/企业微信通知
 
 ---

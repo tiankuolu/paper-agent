@@ -6,11 +6,12 @@ from dotenv import load_dotenv  # 从 .env 文件加载环境变量（API Key �
 from rich.console import Console  # Rich 库的控制台，支持 Markdown 渲染和彩色输出
 from rich.markdown import Markdown  # 把 AI 返回的 Markdown 文本渲染为终端富文本
 from langchain_core.messages import HumanMessage  # LangChain 的人类消息类型，包装用户输入
-from src.agent import get_agent  # 获取编译好的 LangGraph agent（单例，复用同一个实例）
 
-load_dotenv()  # 把 .env 里的 DEEPSEEK_API_KEY 等注入到 os.environ
+load_dotenv()  # 把 .env 里的 LLM_PROVIDER、LLM_API_KEY 等注入到 os.environ
+from src.agent import get_agent  # noqa: E402 - 读取配置后再加载 Agent
+
 console = Console()  # 创建 Rich 控制台实例，后续所有输出都通过它
-agent = get_agent()  # 初始化 agent（第一次调用会创建 LangGraph 图并编译）
+agent = get_agent()  # 使用 .env 中的活动模型配置构建 Agent
 THREAD_ID = str(uuid.uuid4())  # 当前会话的唯一 thread_id，MemorySaver 用它区分不同对话
 
 def main():
