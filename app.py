@@ -73,6 +73,23 @@ with st.sidebar:
     with col2:
         st.metric("已索引", len(indexed_ids))
 
+    # 读每篇论文标题（缓存到 session_state 避免重复解析）
+    if "paper_titles" not in st.session_state:
+        st.session_state.paper_titles = {}
+    titles = st.session_state.paper_titles
+
+    for pdf_path in pdfs:
+        aid = pdf_path.stem
+        if aid not in titles:
+            try:
+                import fitz
+                doc = fitz.open(str(pdf_path))
+                text = doc[0].get_text() if doc.page_count > 0 else ""
+                doc.close()
+                titles[aid] = text.split("\n")[0][:80] if text.strip() else aid
+            except Exception:
+                titles[aid] = aid
+
     if pdfs:
         if st.button("🔍 一键索引全部", use_container_width=True):
             with st.spinner("正在索引..."):
@@ -82,21 +99,21 @@ with st.sidebar:
         st.caption(f"共 {len(pdfs)} 篇论文：")
         for pdf_path in pdfs:
             aid = pdf_path.stem
+            title = titles.get(aid, aid)
             is_indexed = aid in indexed_ids
-            icon = "📄" if is_indexed else "📄"
-            status = "已索引" if is_indexed else "待索引"
+            status = "✅" if is_indexed else "待索引"
             if is_indexed:
-                st.caption(f"{icon} `{aid[:20]}` {status}")
+                st.caption(f"✅ {title}")
             else:
                 col_a, col_b = st.columns([3, 1])
                 with col_a:
-                    st.caption(f"📄 `{aid[:20]}` {status}")
+                    st.caption(f"📄 {title}")
                 with col_b:
                     if st.button("索引", key=f"idx_{aid}", use_container_width=True):
                         from src.tools import parse_paper
                         text = parse_paper(aid)
                         if not text.startswith("Error"):
-                            store.add_paper(aid, text, {"title": text.split(chr(10))[0][:100]})
+                            store.add_paper(aid, text, {"title": title})
                             st.rerun()
     else:
         st.caption("暂无已下载论文")
